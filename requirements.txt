@@ -1,0 +1,6 @@
+apscheduler
+Django
+rsa
+djangorestframework
+MySQL-python
+django_apscheduler
