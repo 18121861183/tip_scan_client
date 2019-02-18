@@ -7,9 +7,10 @@ from client import models
 
 
 class ScanTaskSerializers(serializers.ModelSerializer):
+
     class Meta:
         model = models.ScanTask
-        file = (
+        fields = (
             "id",
             "command",
             "port",
@@ -30,7 +31,7 @@ class ScanTaskSerializers(serializers.ModelSerializer):
 class CloudUserSerializers(serializers.ModelSerializer):
     class Meta:
         model = models.CloudUser
-        file = (
+        fields = (
             "id",
             "username",
             "password",

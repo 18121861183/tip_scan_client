@@ -1,20 +1,21 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
+
+import subprocess
+import time
+
 import ipaddress
 import json
 import os
-from apscheduler.schedulers.background import BackgroundScheduler
-from django.http import HttpResponse
-from django_apscheduler.jobstores import DjangoJobStore, register_events, register_job
+from django.http import HttpResponse, StreamingHttpResponse, JsonResponse
 from django.db.models import Sum
 import tarfile
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
+from django.forms.models import model_to_dict
 
 from client import permissions, rsa_util, date_util, models
 from tip_scan_client import settings
-import logging
-import subprocess
+import thread
 
 
 ports_protocol = {
@@ -57,10 +58,11 @@ ztag_command = {
 
 @api_view(['POST'])
 @permission_classes((permissions.ServerCenterChecked, ))
-def reveive_scan_task(request):
+def receive_scan_task(request):
 
     if request.method == 'POST':
         task_encrypt = request.data['task']
+        print task_encrypt
         task_info = json.loads(rsa_util.rsa_decrypt(task_encrypt))
         network_list = task_info['list']
         for net in network_list:
@@ -75,13 +77,14 @@ def reveive_scan_task(request):
                            '|', 'zgrab', '--port', str(port), '--' + ports_protocol.get(port),
                            '--output-file='+save_path + file_name + '.json']
 
-                models.ScanTask.objects.create(command=" ".join(command), port=port, ip_count=ip_count, ztag_result_path=save_path+file_name+'_ztag.json',
+                models.ScanTask.objects.create(command=" ".join(command), port=port, protocol=ports_protocol.get(port),
+                                               ip_range=net, ip_count=ip_count, ztag_result_path=save_path+file_name+'_ztag.json',
                                                zmap_result_path=save_path + file_name + '.csv', zgrab_result_path=save_path + file_name + '.json',
                                                priority=5, issue_time=date_util.get_date_format(date_util.get_now_timestamp())).save()
 
         for net in network_list:
             ip_count = len(list(ipaddress.ip_network(net).hosts()))
-            for port in ports_protocol.keys():
+            for port in http_protocol.keys():
                 save_path = settings.scan_save_path + date_util.get_now_day_str() + '/'
                 if os.path.exists(save_path) is False:
                     os.makedirs(save_path)
@@ -91,7 +94,8 @@ def reveive_scan_task(request):
                            '|', 'zgrab', '--port', str(port), '--tls', '--http="/"',
                            '--output-file='+save_path + file_name + '.json']
 
-                models.ScanTask.objects.create(command=" ".join(command), port=port, ip_count=ip_count, ztag_result_path=save_path+file_name+'_ztag.json',
+                models.ScanTask.objects.create(command=" ".join(command), port=port, protocol=http_protocol.get(port), ip_range=net,
+                                               ip_count=ip_count, ztag_result_path=save_path+file_name+'_ztag.json',
                                                zmap_result_path=save_path + file_name + '.csv', zgrab_result_path=save_path + file_name + '.json',
                                                priority=5, issue_time=date_util.get_date_format(date_util.get_now_timestamp())).save()
 
@@ -106,23 +110,29 @@ def client_task(request):
     upload_list = models.ScanTask.objects.filter(execute_status=2).filter(upload_status=0).all()
     upload_array = []
     for upload in upload_list:
-        upload_array.append(upload.__dict__)
-    runing_list = models.ScanTask.objects.filter(execute_status=1).all()
-    info = dict()
-    info['number'] = unscan_count
-    info['download'] = upload_array
-    if runing_list is not None and len(runing_list) > 0:
-        info['runing'] = runing_list[0].__dict__
-    return Response(data=str(info), status=200, content_type='application/json')
+        upload_array.append(model_to_dict(upload))
+    running_list = models.ScanTask.objects.filter(execute_status=1).all()
+    if unscan_count['ip_count__sum'] is None:
+        unscan_count = 0
+    else:
+        unscan_count = unscan_count['ip_count__sum']
+    info = {'number': unscan_count, 'download': upload_array}
+    running_array = []
+    for i in running_list:
+        json_dict = model_to_dict(i)
+        running_array.append(json_dict)
+    info['running'] = running_array
+    return JsonResponse(info)
 
 
-@api_view(['POST', 'GET'])
-def download_result(request, pk):
-    task_info = models.ScanTask.objects.filter(id=pk).first()
+@api_view(['GET'])
+def download_result(request):
+    record_id = request.GET.get("id")
+    task_info = models.ScanTask.objects.filter(id=record_id, execute_status=2, ztag_status=1).first()
     zmap = task_info.zmap_result_path
     grab = task_info.zgrab_result_path
     tag = task_info.ztag_result_path
-    tar_pack = '/tmp/scan_result/'+pk+'scan_result.tar.gz'
+    tar_pack = '/tmp/scan_result/'+record_id+'scan_result.tar.gz'
     if os.path.exists('/tmp/scan_result/') is False:
         os.makedirs('/tmp/scan_result/')
     with tarfile.open(tar_pack, 'w') as tar:
@@ -131,13 +141,26 @@ def download_result(request, pk):
         tar.add(tag, arcname='ztag.json')
         tar.close()
 
-    res_file = open(tar_pack, 'rb')
-    # response = HttpResponse(res_file)
-    # response['Content-Type'] = 'application/octet-stream'
-    # response['Content-Disposition'] = 'attachment;filename="'+pk+'scan_result.tar.gz'+'"'
-    return Response(res_file, content_type='application/octet-stream',
-                    template_name=pk+'scan_result.tar.gz', headers='attachment')
+    def file_iterator(file_name, chunk_size=10240):
+        with open(file_name) as f:
+            while True:
+                c = f.read(chunk_size)
+                if c:
+                    yield c
+                else:
+                    break
+    response = StreamingHttpResponse(file_iterator(tar_pack))
+    response['Content-Type'] = 'application/octet-stream'
+    response['Content-Disposition'] = 'attachment;filename="{0}"'.format(record_id+'scan_result.tar.gz')
 
+    return response
+
+
+@api_view(['GET'])
+def success_info(request):
+    record_id = request.GET.get("id")
+    models.ScanTask.objects.filter(id=record_id, execute_status=2, ztag_status=1).update(upload_status=1)
+    return HttpResponse('success')
 
 # 定时扫描
 # try:
@@ -146,14 +169,6 @@ def download_result(request, pk):
 #     scheduler = BackgroundScheduler()
 #     # 调度器使用DjangoJobStore()
 #     scheduler.add_jobstore(DjangoJobStore(), "default")
-#
-#     # @register_job(scheduler, "interval", seconds=10, replace_existing=False)
-#     # def heartbeat_job():
-#     #     unscan_count = models.ScanTask.objects.filter(execute_status=0).aggregate(Sum('ip_count'))
-#     #     print(unscan_count)
-#     #     upload_list = models.ScanTask.objects.filter(execute_status=2).filter(upload_status=0).all()
-#     #     print(upload_list)
-#
 #     @register_job(scheduler, 'interval', seconds=1, replace_existing=False)
 #     def exec_command_job():
 #         task_info = models.ScanTask.objects.filter(execute_status=0).first()
@@ -189,3 +204,37 @@ def download_result(request, pk):
 #     print(e)
 #     scheduler.shutdown()
 
+# def exec_command_job(delay):
+#     while True:
+#         task_info = models.ScanTask.objects.filter(execute_status=0).first()
+#         command = task_info.command
+#         _id = task_info.id
+#         models.ScanTask.objects.filter(id=_id).update(execute_status=1)
+#         try:
+#             subprocess.call(command, shell=True)
+#             models.ScanTask.objects.filter(id=_id).update(execute_status=2, map_grab_time=date_util.get_date_format(date_util.get_now_timestamp()))
+#         except BaseException as e1:
+#             print(e1)
+#             models.ScanTask.objects.filter(id=_id).update(execute_status=-1)
+#         time.sleep(delay)
+#
+#
+# def exec_ztag_job(delay):
+#     while True:
+#         print("检测zgrab完成的结果,进行ztag提取")
+#         all_list = models.ScanTask.objects.filter(execute_status=2).filter(ztag_status=0).all()
+#         for taks in all_list:
+#             try:
+#                 tag_path = taks.ztag_result_path
+#                 port = taks.port
+#                 grab_path = taks.zgrab_result_path
+#                 subprocess.call('nohup cat '+grab_path+' | ztag -p'+str(port)+' -i '+grab_path+' '+ztag_command.get(port)+' > '+tag_path + ' &', shell=True)
+#                 models.ScanTask.objects.filter(id=taks.id).update(ztag_status=1, finish_time=date_util.get_date_format(date_util.get_now_timestamp()))
+#             except BaseException as e2:
+#                 print(e2)
+#                 models.ScanTask.objects.filter(id=taks.id).update(ztag_status=-1)
+#         time.sleep(delay)
+#
+#
+# thread.start_new_thread(exec_command_job, (10,))
+# thread.start_new_thread(exec_ztag_job, (2,))

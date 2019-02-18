@@ -10,6 +10,8 @@ import django.utils.timezone as timezone
 class ScanTask(models.Model):
     command = models.CharField(max_length=500, verbose_name="指令")
     port = models.IntegerField(verbose_name="端口", default=0)
+    protocol = models.CharField(max_length=100, verbose_name="扫描协议")
+    ip_range = models.CharField(max_length=100, verbose_name="要探测的IP网段")
     ip_count = models.IntegerField(verbose_name="ip数量", default=0)
     zmap_result_path = models.CharField(max_length=150, verbose_name="zmap结果存储路径")
     zgrab_result_path = models.CharField(max_length=150, verbose_name="zgrab结果存储路径")
@@ -17,9 +19,9 @@ class ScanTask(models.Model):
     issue_time = models.DateTimeField(default=timezone.activate(timezone="UTC"), verbose_name="接收指令时间")
     map_grab_time = models.DateTimeField(verbose_name="zmap和zgrab执行完成时间", null=True)
     finish_time = models.DateTimeField(verbose_name="全部执行完成时间", null=True)
-    execute_status = models.IntegerField(verbose_name="执行状态", default=0)
-    ztag_status = models.IntegerField(verbose_name="ztag执行状态", default=0)
-    upload_status = models.IntegerField(verbose_name="上报中心状态", default=0)
+    execute_status = models.IntegerField(verbose_name="执行状态(0-未执行,1-正在执行,2-执行完成,-1-执行失败)", default=0)
+    ztag_status = models.IntegerField(verbose_name="ztag执行状态(0-未执行,1-执行完成,-1-执行失败)", default=0)
+    upload_status = models.IntegerField(verbose_name="上报中心状态(0-未上报,1-已上报,-1-上报失败)", default=0)
     priority = models.IntegerField(verbose_name="扫描优先级", default=0)
 
     def __str__(self):
@@ -42,3 +44,4 @@ class CloudUser(models.Model):
     class Meta:
         verbose_name = "本机"
         verbose_name_plural = verbose_name
+

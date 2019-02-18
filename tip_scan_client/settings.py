@@ -136,3 +136,4 @@ center_address = '127.0.0.1'
 center_port = '8000'
 
 scan_save_path = '/opt/scan_result/'
+

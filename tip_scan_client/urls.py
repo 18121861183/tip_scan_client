@@ -20,8 +20,9 @@ from client import views
 
 urlpatterns = [
     url(r'^admin/', admin.site.urls),
-    url(r'^task/', views.reveive_scan_task),
+    url(r'^task/', views.receive_scan_task),
     url(r'^client/', views.client_task),
     url(r'^download/', views.download_result),
+    url(r'^update/', views.success_info),
     url(r'^api-auth/', include('rest_framework.urls', namespace='rest_framework'))
 ]
