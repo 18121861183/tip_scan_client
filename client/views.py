@@ -2,6 +2,7 @@
 from __future__ import unicode_literals
 
 import subprocess
+import thread
 import time
 
 import ipaddress
@@ -15,7 +16,6 @@ from django.forms.models import model_to_dict
 
 from client import permissions, rsa_util, date_util, models
 from tip_scan_client import settings
-import thread
 
 
 ports_protocol = {
@@ -46,7 +46,7 @@ ztag_command = {
     80: '-P http -S get',
     110: '-P pop3 -S starttls',
     143: '-P imap -S starttls',
-    443: '-P smtp -S starttls',
+    443: '-P http -S get',
     502: '-P modbus -S device_id',
     1911: '-P fox -S device_id',
     3306: '-P mysql -S banner',
@@ -132,13 +132,15 @@ def download_result(request):
     zmap = task_info.zmap_result_path
     grab = task_info.zgrab_result_path
     tag = task_info.ztag_result_path
+    port = task_info.port
+    protocol = task_info.protocol
     tar_pack = '/tmp/scan_result/'+record_id+'scan_result.tar.gz'
     if os.path.exists('/tmp/scan_result/') is False:
         os.makedirs('/tmp/scan_result/')
     with tarfile.open(tar_pack, 'w') as tar:
         tar.add(zmap, arcname='zmap.csv')
-        tar.add(grab, arcname='banner.json')
-        tar.add(tag, arcname='ztag.json')
+        tar.add(grab, arcname='banner_'+str(protocol)+'_'+str(port)+'.json')
+        tar.add(tag, arcname='ztag_'+str(protocol)+'_'+str(port)+'.json')
         tar.close()
 
     def file_iterator(file_name, chunk_size=10240):
@@ -204,37 +206,41 @@ def success_info(request):
 #     print(e)
 #     scheduler.shutdown()
 
-# def exec_command_job(delay):
-#     while True:
-#         task_info = models.ScanTask.objects.filter(execute_status=0).first()
-#         command = task_info.command
-#         _id = task_info.id
-#         models.ScanTask.objects.filter(id=_id).update(execute_status=1)
-#         try:
-#             subprocess.call(command, shell=True)
-#             models.ScanTask.objects.filter(id=_id).update(execute_status=2, map_grab_time=date_util.get_date_format(date_util.get_now_timestamp()))
-#         except BaseException as e1:
-#             print(e1)
-#             models.ScanTask.objects.filter(id=_id).update(execute_status=-1)
-#         time.sleep(delay)
-#
-#
-# def exec_ztag_job(delay):
-#     while True:
-#         print("检测zgrab完成的结果,进行ztag提取")
-#         all_list = models.ScanTask.objects.filter(execute_status=2).filter(ztag_status=0).all()
-#         for taks in all_list:
-#             try:
-#                 tag_path = taks.ztag_result_path
-#                 port = taks.port
-#                 grab_path = taks.zgrab_result_path
-#                 subprocess.call('nohup cat '+grab_path+' | ztag -p'+str(port)+' -i '+grab_path+' '+ztag_command.get(port)+' > '+tag_path + ' &', shell=True)
-#                 models.ScanTask.objects.filter(id=taks.id).update(ztag_status=1, finish_time=date_util.get_date_format(date_util.get_now_timestamp()))
-#             except BaseException as e2:
-#                 print(e2)
-#                 models.ScanTask.objects.filter(id=taks.id).update(ztag_status=-1)
-#         time.sleep(delay)
-#
-#
-# thread.start_new_thread(exec_command_job, (10,))
-# thread.start_new_thread(exec_ztag_job, (2,))
+
+def exec_command_job(delay):
+    while True:
+        task_info = models.ScanTask.objects.filter(execute_status=0).first()
+        if task_info is not None:
+            print('当前执行指令: ', task_info)
+            command = task_info.command
+            _id = task_info.id
+            models.ScanTask.objects.filter(id=_id).update(execute_status=1)
+            try:
+                subprocess.call(command, shell=True)
+                models.ScanTask.objects.filter(id=_id).update(execute_status=2, map_grab_time=date_util.get_date_format(date_util.get_now_timestamp()))
+            except BaseException as e1:
+                print(e1)
+                models.ScanTask.objects.filter(id=_id).update(execute_status=-1)
+        time.sleep(delay)
+
+
+def exec_ztag_job(delay):
+    while True:
+        all_list = models.ScanTask.objects.filter(execute_status=2).filter(ztag_status=0).all()
+        if len(all_list) > 0:
+            print('检测到banner完成, 进行ztag扫描')
+            for taks in all_list:
+                try:
+                    tag_path = taks.ztag_result_path
+                    port = taks.port
+                    grab_path = taks.zgrab_result_path
+                    subprocess.call('nohup cat '+grab_path+' | ztag -p'+str(port)+' -i '+grab_path+' '+ztag_command.get(port)+' > '+tag_path + ' &', shell=True)
+                    models.ScanTask.objects.filter(id=taks.id).update(ztag_status=1, finish_time=date_util.get_date_format(date_util.get_now_timestamp()))
+                except BaseException as e2:
+                    print(e2)
+                    models.ScanTask.objects.filter(id=taks.id).update(ztag_status=-1)
+        time.sleep(delay)
+
+
+thread.start_new_thread(exec_command_job, (2,))
+thread.start_new_thread(exec_ztag_job, (2,))
