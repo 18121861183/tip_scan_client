@@ -26,7 +26,7 @@ SECRET_KEY = 'lb#hdx!+cx0x(5aq2g!)o6_-i(z9ojo17wifl69^0q(z6$zx)g'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -132,8 +132,6 @@ USE_TZ = False
 
 STATIC_URL = '/static/'
 
-center_address = '127.0.0.1'
-center_port = '8000'
 
 scan_save_path = '/opt/scan_result/'
 
