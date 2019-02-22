@@ -8,7 +8,7 @@ import time
 import ipaddress
 import json
 import os
-from django.http import HttpResponse, StreamingHttpResponse, JsonResponse
+from django.http import HttpResponse, JsonResponse, FileResponse
 from django.db.models import Sum
 import tarfile
 from rest_framework.decorators import api_view, permission_classes
@@ -107,10 +107,14 @@ def receive_scan_task(request):
 @permission_classes((permissions.ServerCenterChecked, ))
 def client_task(request):
     unscan_count = models.ScanTask.objects.filter(execute_status=0).aggregate(Sum('ip_count'))
-    upload_list = models.ScanTask.objects.filter(execute_status=2).filter(upload_status=0).all()
+    upload_list = models.ScanTask.objects.filter(execute_status=2).filter(ztag_status=1).filter(upload_status=0).all()
     upload_array = []
+    number = 0
     for upload in upload_list:
+        if number > 5:
+            break
         upload_array.append(model_to_dict(upload))
+        number += 1
     running_list = models.ScanTask.objects.filter(execute_status=1).all()
     if unscan_count['ip_count__sum'] is None:
         unscan_count = 0
@@ -125,7 +129,6 @@ def client_task(request):
     return JsonResponse(info)
 
 
-@api_view(['GET'])
 def download_result(request):
     record_id = request.GET.get("id")
     task_info = models.ScanTask.objects.filter(id=record_id, execute_status=2, ztag_status=1).first()
@@ -143,15 +146,8 @@ def download_result(request):
         tar.add(tag, arcname='ztag_'+str(protocol)+'_'+str(port)+'.json')
         tar.close()
 
-    def file_iterator(file_name, chunk_size=10240):
-        with open(file_name) as f:
-            while True:
-                c = f.read(chunk_size)
-                if c:
-                    yield c
-                else:
-                    break
-    response = StreamingHttpResponse(file_iterator(tar_pack))
+    _file = open(tar_pack)
+    response = FileResponse(_file)
     response['Content-Type'] = 'application/octet-stream'
     response['Content-Disposition'] = 'attachment;filename="{0}"'.format(record_id+'scan_result.tar.gz')
 
@@ -164,54 +160,11 @@ def success_info(request):
     models.ScanTask.objects.filter(id=record_id, execute_status=2, ztag_status=1).update(upload_status=1)
     return HttpResponse('success')
 
-# 定时扫描
-# try:
-#     logging.basicConfig()
-#     # 实例化调度器
-#     scheduler = BackgroundScheduler()
-#     # 调度器使用DjangoJobStore()
-#     scheduler.add_jobstore(DjangoJobStore(), "default")
-#     @register_job(scheduler, 'interval', seconds=1, replace_existing=False)
-#     def exec_command_job():
-#         task_info = models.ScanTask.objects.filter(execute_status=0).first()
-#         command = task_info.command
-#         _id = task_info.id
-#         models.ScanTask.objects.filter(id=_id).update(execute_status=1)
-#         try:
-#             subprocess.call(command, shell=True)
-#             models.ScanTask.objects.filter(id=_id).update(execute_status=2, map_grab_time=date_util.get_date_format(date_util.get_now_timestamp()))
-#         except BaseException as e1:
-#             print(e1)
-#             models.ScanTask.objects.filter(id=_id).update(execute_status=-1)
-#
-#     @register_job(scheduler, 'interval', seconds=1, replace_existing=False)
-#     def exec_ztag_job():
-#         print("检测zgrab完成的结果,进行ztag提取")
-#         all_list = models.ScanTask.objects.filter(execute_status=2).filter(ztag_status=0).all()
-#         for taks in all_list:
-#             try:
-#                 tag_path = taks.ztag_result_path
-#                 port = taks.port
-#                 grab_path = taks.zgrab_result_path
-#                 subprocess.call('nohup cat '+grab_path+' | ztag -p'+str(port)+' -i '+grab_path+' '+ztag_command.get(port)+' > '+tag_path + ' &', shell=True)
-#                 models.ScanTask.objects.filter(id=taks.id).update(ztag_status=1, finish_time=date_util.get_date_format(date_util.get_now_timestamp()))
-#             except BaseException as e2:
-#                 print(e2)
-#                 models.ScanTask.objects.filter(id=taks.id).update(ztag_status=-1)
-#
-#     register_events(scheduler)
-#     # 调度器开始
-#     scheduler.start()
-# except Exception as e:
-#     print(e)
-#     scheduler.shutdown()
-
 
 def exec_command_job(delay):
     while True:
         task_info = models.ScanTask.objects.filter(execute_status=0).first()
         if task_info is not None:
-            print('当前执行指令: ', task_info)
             command = task_info.command
             _id = task_info.id
             models.ScanTask.objects.filter(id=_id).update(execute_status=1)
@@ -228,7 +181,6 @@ def exec_ztag_job(delay):
     while True:
         all_list = models.ScanTask.objects.filter(execute_status=2).filter(ztag_status=0).all()
         if len(all_list) > 0:
-            print('检测到banner完成, 进行ztag扫描')
             for taks in all_list:
                 try:
                     tag_path = taks.ztag_result_path
