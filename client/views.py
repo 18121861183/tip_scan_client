@@ -20,14 +20,14 @@ from tip_scan_client import settings
 
 ports_protocol = {
     21: 'ftp',
-    22: 'ssh',
+    22: 'xssh',
     23: 'telnet',
     25: 'smtp',
     110: 'pop3',
     143: 'imap',
     502: 'modbus',
     1911: 'fox',
-    3306: 'mysql',
+    # 3306: 'mysql',
     47808: 'bacnet',
     20000: 'dnp3'
 }
@@ -54,6 +54,8 @@ ztag_command = {
     47808: '-P bacnet -S device_id',
     20000: '-P dnp3 -S status',
 }
+
+models.ScanTask.objects.filter(execute_status=1).update(execute_status=0)
 
 
 @api_view(['POST'])
@@ -155,6 +157,7 @@ def download_result(request):
 
 
 @api_view(['GET'])
+@permission_classes((permissions.ServerCenterChecked, ))
 def success_info(request):
     record_id = request.GET.get("id")
     models.ScanTask.objects.filter(id=record_id, execute_status=2, ztag_status=1).update(upload_status=1)
@@ -177,6 +180,22 @@ def exec_command_job(delay):
         time.sleep(delay)
 
 
+def report_detail(_id, zmap_path, zgrab_path, ztag_path, protocol, port):
+
+    report_path = settings.report_save_path + date_util.get_now_day_str() + '/'
+    if os.path.exists(report_path) is False:
+        os.makedirs(report_path)
+
+    filename = str(_id) + 'scan_result.tar.gz'
+
+    with tarfile.open(report_path + filename, 'w:gz') as tar:
+        tar.add(zmap_path, arcname='zmap.csv')
+        tar.add(zgrab_path, arcname='banner_' + str(protocol) + '_' + str(port) + '.json')
+        tar.add(ztag_path, arcname='ztag_' + str(protocol) + '_' + str(port) + '.json')
+        tar.close()
+    return report_path + filename
+
+
 def exec_ztag_job(delay):
     while True:
         all_list = models.ScanTask.objects.filter(execute_status=2).filter(ztag_status=0).all()
@@ -186,8 +205,14 @@ def exec_ztag_job(delay):
                     tag_path = taks.ztag_result_path
                     port = taks.port
                     grab_path = taks.zgrab_result_path
-                    subprocess.call('nohup cat '+grab_path+' | ztag -p'+str(port)+' -i '+grab_path+' '+ztag_command.get(port)+' > '+tag_path + ' &', shell=True)
-                    models.ScanTask.objects.filter(id=taks.id).update(ztag_status=1, finish_time=date_util.get_date_format(date_util.get_now_timestamp()))
+                    subprocess.call('cat '+grab_path+' | ztag -p'+str(port)+' -i '+grab_path+' '+ztag_command.get(port)+' > '+tag_path, shell=True)
+                    time.sleep(0.1)
+                    report_path = report_detail(_id=taks.id, zmap_path=taks.zmap_result_path, zgrab_path=taks.zgrab_result_path,
+                                                ztag_path=taks.ztag_result_path, protocol=taks.protocol, port=taks.port)
+                    models.ScanTask.objects.filter(id=taks.id).update(ztag_status=1, report_result_path=report_path, finish_time=date_util.get_date_format(date_util.get_now_timestamp()))
+                    os.remove(taks.zmap_result_path)
+                    os.remove(taks.zgrab_result_path)
+                    os.remove(taks.ztag_result_path)
                 except BaseException as e2:
                     print(e2)
                     models.ScanTask.objects.filter(id=taks.id).update(ztag_status=-1)
@@ -196,3 +221,4 @@ def exec_ztag_job(delay):
 
 thread.start_new_thread(exec_command_job, (2,))
 thread.start_new_thread(exec_ztag_job, (2,))
+

@@ -135,3 +135,5 @@ STATIC_URL = '/static/'
 
 scan_save_path = '/opt/scan_result/'
 
+report_save_path = '/opt/report/'
+

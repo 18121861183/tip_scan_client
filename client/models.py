@@ -19,6 +19,7 @@ class ScanTask(models.Model):
     issue_time = models.DateTimeField(default=timezone.activate(timezone="UTC"), verbose_name="接收指令时间")
     map_grab_time = models.DateTimeField(verbose_name="zmap和zgrab执行完成时间", null=True)
     finish_time = models.DateTimeField(verbose_name="全部执行完成时间", null=True)
+    report_result_path = models.CharField(verbose_name="分析结果存储路径", max_length=200, null=True)
     execute_status = models.IntegerField(verbose_name="执行状态(0-未执行,1-正在执行,2-执行完成,-1-执行失败)", default=0)
     ztag_status = models.IntegerField(verbose_name="ztag执行状态(0-未执行,1-执行完成,-1-执行失败)", default=0)
     upload_status = models.IntegerField(verbose_name="上报中心状态(0-未上报,1-已上报,-1-上报失败)", default=0)
