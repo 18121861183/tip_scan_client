@@ -8,7 +8,7 @@ import django.utils.timezone as timezone
 
 
 class ScanTask(models.Model):
-    command = models.CharField(max_length=500, verbose_name="指令")
+    command = models.CharField(max_length=255, verbose_name="指令", primary_key=True)
     port = models.IntegerField(verbose_name="端口", default=0)
     protocol = models.CharField(max_length=100, verbose_name="扫描协议")
     ip_range = models.CharField(max_length=100, verbose_name="要探测的IP网段")
@@ -20,6 +20,7 @@ class ScanTask(models.Model):
     map_grab_time = models.DateTimeField(verbose_name="zmap和zgrab执行完成时间", null=True)
     finish_time = models.DateTimeField(verbose_name="全部执行完成时间", null=True)
     report_result_path = models.CharField(verbose_name="分析结果存储路径", max_length=200, null=True)
+    report_file_md5 = models.CharField(verbose_name="分析报告的MD5值，用于完整性校验", null=True, max_length=40)
     execute_status = models.IntegerField(verbose_name="执行状态(0-未执行,1-正在执行,2-执行完成,-1-执行失败)", default=0)
     ztag_status = models.IntegerField(verbose_name="ztag执行状态(0-未执行,1-执行完成,-1-执行失败)", default=0)
     upload_status = models.IntegerField(verbose_name="上报中心状态(0-未上报,1-已上报,-1-上报失败)", default=0)
