@@ -16,7 +16,7 @@ import tarfile
 from rest_framework.decorators import api_view, permission_classes
 from django.forms.models import model_to_dict
 
-from client import permissions, rsa_util, date_util, models
+from client import permissions, rsa_util, date_util, models, hash_util
 from tip_scan_client import settings
 
 ports_protocol = {
@@ -76,9 +76,10 @@ def receive_scan_task(request):
                            '|', 'zgrab', '--port', str(port), '--' + ports_protocol.get(port),
                            '--output-file=' + save_path + file_name + '.json']
                 command_str = " ".join(command)
-                print(command_str)
-                if models.ScanTask.objects.get(command=command_str) is None:
-                    models.ScanTask.objects.create(command=command_str, port=port, protocol=ports_protocol.get(port),
+                _id = hash_util.get_sha1(command_str)
+                print(_id)
+                if models.ScanTask.objects.filter(id=_id).count() == 0:
+                    models.ScanTask.objects.create(id=_id, command=command_str, port=port, protocol=ports_protocol.get(port),
                                                    ip_range=net, ip_count=ip_count, ztag_result_path=save_path + file_name + '_ztag.json',
                                                    zmap_result_path=save_path + file_name + '.csv', zgrab_result_path=save_path + file_name + '.json',
                                                    priority=5, issue_time=date_util.get_date_format(date_util.get_now_timestamp())).save()
@@ -95,9 +96,10 @@ def receive_scan_task(request):
                            '|', 'zgrab', '--port', str(port), '--tls', '--http="/"',
                            '--output-file=' + save_path + file_name + '.json']
                 command_str = " ".join(command)
-                print(command_str)
-                if models.ScanTask.objects.get(command=command_str) is None:
-                    models.ScanTask.objects.create(command=" ".join(command), port=port, protocol=http_protocol.get(port), ip_range=net,
+                _id = hash_util.get_sha1(command_str)
+                print(_id)
+                if models.ScanTask.objects.filter(id=_id).count() == 0:
+                    models.ScanTask.objects.create(id=_id, command=command_str, port=port, protocol=http_protocol.get(port), ip_range=net,
                                                    ip_count=ip_count, ztag_result_path=save_path + file_name + '_ztag.json',
                                                    zmap_result_path=save_path + file_name + '.csv', zgrab_result_path=save_path + file_name + '.json',
                                                    priority=5, issue_time=date_util.get_date_format(date_util.get_now_timestamp())).save()
@@ -224,5 +226,6 @@ def exec_ztag_job(delay):
         time.sleep(delay)
 
 
-thread.start_new_thread(exec_command_job, (2,))
-thread.start_new_thread(exec_ztag_job, (2,))
+# thread.start_new_thread(exec_command_job, (2,))
+# thread.start_new_thread(exec_ztag_job, (2,))
+

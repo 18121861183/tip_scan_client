@@ -8,7 +8,8 @@ import django.utils.timezone as timezone
 
 
 class ScanTask(models.Model):
-    command = models.CharField(max_length=255, verbose_name="指令", primary_key=True)
+    id = models.CharField(max_length=40, verbose_name="ID", primary_key=True)
+    command = models.CharField(max_length=500, verbose_name="指令")
     port = models.IntegerField(verbose_name="端口", default=0)
     protocol = models.CharField(max_length=100, verbose_name="扫描协议")
     ip_range = models.CharField(max_length=100, verbose_name="要探测的IP网段")
