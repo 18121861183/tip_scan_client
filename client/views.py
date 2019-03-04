@@ -226,6 +226,6 @@ def exec_ztag_job(delay):
         time.sleep(delay)
 
 
-# thread.start_new_thread(exec_command_job, (2,))
-# thread.start_new_thread(exec_ztag_job, (2,))
+thread.start_new_thread(exec_command_job, (2,))
+thread.start_new_thread(exec_ztag_job, (2,))
 
