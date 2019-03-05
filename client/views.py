@@ -136,7 +136,7 @@ def client_task(request):
 
 def download_result(request):
     record_id = request.GET.get("id")
-    task_info = models.ScanTask.objects.filter(command=record_id, execute_status=2, ztag_status=1).first()
+    task_info = models.ScanTask.objects.filter(id=record_id, execute_status=2, ztag_status=1).first()
     tar_pack = task_info.report_result_path
 
     _file = open(tar_pack)
@@ -147,7 +147,7 @@ def download_result(request):
     return response
 
 
-@api_view(['GET'])
+@api_view(['GET', 'POST'])
 @permission_classes((permissions.ServerCenterChecked,))
 def success_info(request):
     record_id = None
@@ -155,7 +155,7 @@ def success_info(request):
         record_id = request.GET.get("id")
     elif request.method == 'POST':
         record_id = request.data['id']
-    models.ScanTask.objects.filter(command=record_id, execute_status=2, ztag_status=1).update(upload_status=1)
+    models.ScanTask.objects.filter(id=record_id, execute_status=2, ztag_status=1).update(upload_status=1)
     return HttpResponse('success')
 
 
@@ -166,23 +166,24 @@ def file_hash(file_path):
     while _bytes != b'':
         m.update(_bytes)
         _bytes = _file.read(1024)
-        _file.close()
+    _file.close()
     md5value = m.hexdigest()
     return md5value
 
 
 def exec_command_job(delay):
     while True:
+        print("exec_command_job is running")
         task_info = models.ScanTask.objects.filter(execute_status=0).first()
         if task_info is not None:
             command = task_info.command
-            models.ScanTask.objects.filter(command=command).update(execute_status=1)
+            models.ScanTask.objects.filter(id=task_info.id).update(execute_status=1)
             try:
                 subprocess.call(command, shell=True)
-                models.ScanTask.objects.filter(command=command).update(execute_status=2, map_grab_time=date_util.get_date_format(date_util.get_now_timestamp()))
+                models.ScanTask.objects.filter(id=task_info.id).update(execute_status=2, map_grab_time=date_util.get_date_format(date_util.get_now_timestamp()))
             except BaseException as e1:
                 print(e1)
-                models.ScanTask.objects.filter(command=command).update(execute_status=-1)
+                models.ScanTask.objects.filter(id=task_info.id).update(execute_status=-1)
         time.sleep(delay)
 
 
@@ -192,19 +193,19 @@ def report_detail(_id, zmap_path, zgrab_path, ztag_path, protocol, port):
         os.makedirs(report_path)
 
     filename = str(_id) + 'scan_result.tar.gz'
-
-    with tarfile.open(report_path + filename, 'w:gz') as tar:
+    filepath = report_path + filename
+    with tarfile.open(filepath, 'w:gz') as tar:
         tar.add(zmap_path, arcname='zmap.csv')
         tar.add(zgrab_path, arcname='banner_' + str(protocol) + '_' + str(port) + '.json')
         tar.add(ztag_path, arcname='ztag_' + str(protocol) + '_' + str(port) + '.json')
-        tar.close()
 
-    file_md5 = file_hash(report_path + filename)
-    return report_path + filename, file_md5
+    file_md5 = file_hash(filepath)
+    return filepath, file_md5
 
 
 def exec_ztag_job(delay):
     while True:
+        print("exec_ztag_job is running")
         all_list = models.ScanTask.objects.filter(execute_status=2).filter(ztag_status=0).all()
         if len(all_list) > 0:
             for taks in all_list:
@@ -212,17 +213,17 @@ def exec_ztag_job(delay):
                     tag_path = taks.ztag_result_path
                     port = taks.port
                     grab_path = taks.zgrab_result_path
-                    subprocess.call('cat ' + grab_path + ' | ztag -p' + str(port) + ' -i ' + grab_path + ' ' + ztag_command.get(port) + ' > ' + tag_path, shell=True)
+                    subprocess.call('nohup cat '+grab_path+' | ztag -p' + str(port) + ' ' + ztag_command.get(port) + ' > ' + tag_path, shell=True)
                     time.sleep(0.1)
-                    report_path, md5 = report_detail(_id=taks.command, zmap_path=taks.zmap_result_path, zgrab_path=taks.zgrab_result_path,
+                    report_path, md5 = report_detail(_id=taks.id, zmap_path=taks.zmap_result_path, zgrab_path=taks.zgrab_result_path,
                                                      ztag_path=taks.ztag_result_path, protocol=taks.protocol, port=taks.port)
-                    models.ScanTask.objects.filter(command=taks.command).update(ztag_status=1, report_result_path=report_path, report_file_md5=md5, finish_time=date_util.get_date_format(date_util.get_now_timestamp()))
+                    models.ScanTask.objects.filter(id=taks.id).update(ztag_status=1, report_result_path=report_path, report_file_md5=md5, finish_time=date_util.get_date_format(date_util.get_now_timestamp()))
                     os.remove(taks.zmap_result_path)
                     os.remove(taks.zgrab_result_path)
                     os.remove(taks.ztag_result_path)
                 except BaseException as e2:
-                    print(e2)
-                    models.ScanTask.objects.filter(command=taks.command).update(ztag_status=-1)
+                    print(e2.message)
+                    models.ScanTask.objects.filter(id=taks.id).update(ztag_status=-1)
         time.sleep(delay)
 
 
