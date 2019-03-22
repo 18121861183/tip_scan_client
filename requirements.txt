@@ -5,3 +5,4 @@ djangorestframework
 MySQL-python
 django_apscheduler
 ipaddress
+gunicorn

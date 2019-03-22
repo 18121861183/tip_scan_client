@@ -21,13 +21,14 @@ from tip_scan_client import settings
 
 ports_protocol = {
     21: 'ftp',
-    22: 'xssh',
+    22: 'ssh',
     23: 'telnet',
     25: 'smtp',
     110: 'pop3',
     143: 'imap',
     502: 'modbus',
     1911: 'fox',
+
 }
 
 http_protocol = {
@@ -227,6 +228,59 @@ def exec_ztag_job(delay):
         time.sleep(delay)
 
 
-thread.start_new_thread(exec_command_job, (2,))
-thread.start_new_thread(exec_ztag_job, (2,))
+# thread.start_new_thread(exec_command_job, (2,))
+# thread.start_new_thread(exec_ztag_job, (2,))
+
+#
+# def insert_scan(file_path, port, protocol):
+#     with(open(file_path, 'r')) as f:
+#         ips_line = set()
+#         for ip in f.readlines():
+#             ips_line.add(ip.strip())
+#             if len(ips_line) >= 20000:
+#                 ips_str = " ".join(ips_line)
+#                 _id = hash_util.get_sha1(ips_str)
+#                 zmap_result_path = '/opt/zmap/'+_id+'.csv'
+#                 zgrab_result_path = '/opt/zgrab2/'+_id+'.json'
+#                 ztag_result_path = '/opt/ztag/'+_id+'.json'
+#                 command = ['zmap', ips_str, '--bandwidth', '10M', '--probe-module=icmp_echoscan', '-p', str(port),
+#                            '--output-fields=* | ztee', zmap_result_path, '| zgrab2', protocol, '--output-file='+zgrab_result_path]
+#                 command_str = " ".join(command)
+#                 _id = hash_util.get_sha1(command_str)
+#                 print(_id)
+#                 models.ScanTask.objects.create(
+#                     id=_id, command=command_str, port=port, protocol=protocol, ip_range='散列',
+#                     ip_count=len(ips_line), ztag_result_path=ztag_result_path,
+#                     zmap_result_path=zmap_result_path, zgrab_result_path=zgrab_result_path,
+#                     priority=5, issue_time=date_util.get_date_format(date_util.get_now_timestamp())).save()
+#                 ips_line.clear()
+#
+#         if len(ips_line) > 0:
+#             ips_str = " ".join(ips_line)
+#             _id = hash_util.get_sha1(ips_str)
+#             zmap_result_path = '/opt/zmap/' + _id + '.csv'
+#             zgrab_result_path = '/opt/zgrab2/' + _id + '.json'
+#             ztag_result_path = '/opt/ztag/' + _id + '.json'
+#             command = ['zmap', ips_str, '--bandwidth', '10M', '--probe-module=icmp_echoscan', '-p', str(port),
+#                        '--output-fields=* | ztee', zmap_result_path, '| zgrab2', protocol, '--output-file='+zgrab_result_path]
+#             command_str = " ".join(command)
+#             _id = hash_util.get_sha1(command_str)
+#             print(_id)
+#             models.ScanTask.objects.create(
+#                 id=_id, command=command_str, port=port, protocol=protocol, ip_range='散列',
+#                 ip_count=len(ips_line), ztag_result_path=ztag_result_path,
+#                 zmap_result_path=zmap_result_path, zgrab_result_path=zgrab_result_path,
+#                 priority=5, issue_time=date_util.get_date_format(date_util.get_now_timestamp())).save()
+#
+#
+# insert_scan('/opt/scan_ips/03-08-telnet-9527.csv', 9527, 'telnet')
+# insert_scan('/opt/scan_ips/03-21-pop3s-995.csv', 995, 'pop3')
+# insert_scan('/opt/scan_ips/03-21-pop3_starttls-110.csv', 110, 'tls')
+# insert_scan('/opt/scan_ips/03-21-smtp_465.csv', 465, 'smtp')
+# insert_scan('/opt/scan_ips/03-21-smtp_starttls_25.csv', 25, 'tls')
+# insert_scan('/opt/scan_ips/03-21-smtp_starttls_587.csv', 587, 'tls')
+# insert_scan('/opt/scan_ips/03-21-telnet-23.csv', 23, 'telnet')
+# insert_scan('/opt/scan_ips/03-06-ftp-21.csv', 21, 'ftp')
+
+
 
