@@ -26,6 +26,9 @@ class ScanTask(models.Model):
     ztag_status = models.IntegerField(verbose_name="ztag执行状态(0-未执行,1-执行完成,-1-执行失败)", default=0)
     upload_status = models.IntegerField(verbose_name="上报中心状态(0-未上报,1-已上报,-1-上报失败)", default=0)
     priority = models.IntegerField(verbose_name="扫描优先级", default=0)
+    online_count = models.IntegerField(verbose_name="online", default=0)
+    zgrab_success_count = models.IntegerField(verbose_name="banner", default=0)
+    ztag_handle_count = models.IntegerField(verbose_name="finger", default=0)
 
     def __str__(self):
         return self.command

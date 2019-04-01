@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
+import commands
 import hashlib
 import io
+import multiprocessing
 import subprocess
 import thread
 import time
+from threading import Timer
 
 import ipaddress
 import json
@@ -54,7 +57,10 @@ ztag_command = {
     20000: '-P dnp3 -S status',
 }
 
-# models.ScanTask.objects.filter(execute_status=1).update(execute_status=0)
+try:
+    models.ScanTask.objects.filter(execute_status=1).update(execute_status=0)
+except BaseException as e:
+    print(e, 'init error ')
 
 
 @api_view(['POST'])
@@ -172,19 +178,46 @@ def file_hash(file_path):
     return md5value
 
 
+def scan_start(task_info):
+    command = task_info.command
+    print("start running: ", command)
+    models.ScanTask.objects.filter(id=task_info.id).update(execute_status=1)
+    try:
+        # subprocess.call(command, shell=True)
+        output = commands.getoutput(command)
+        online_count = 0
+        zgrab_success_count = 0
+        try:
+            result = output.split("\n")
+            if len(result) > 0:
+                execute_status = result[len(result) - 1]
+                scan_info = json.loads(execute_status)
+                status = scan_info.get('statuses')
+                if len(status.keys()) > 0:
+                    _info = status.get(status.keys()[0])
+                    success = _info.get("successes")
+                    failure = _info.get("failures")
+                    zgrab_success_count = int(success)
+                    online_count = int(success) + int(failure)
+        except BaseException as e2:
+            print(e2, "scan count get error:", command)
+        models.ScanTask.objects.filter(id=task_info.id).update(execute_status=2, online_count=online_count,
+                                                               zgrab_success_count=zgrab_success_count,
+                                                               map_grab_time=date_util.get_date_format(
+                                                                   date_util.get_now_timestamp()))
+    except BaseException as e1:
+        print(e1, command)
+        models.ScanTask.objects.filter(id=task_info.id).update(execute_status=-1)
+
+
 def exec_command_job(delay):
+    pool = multiprocessing.Pool(processes=8)
     while True:
         print("exec_command_job is running")
         task_info = models.ScanTask.objects.filter(execute_status=0).first()
         if task_info is not None:
-            command = task_info.command
-            models.ScanTask.objects.filter(id=task_info.id).update(execute_status=1)
-            try:
-                subprocess.call(command, shell=True)
-                models.ScanTask.objects.filter(id=task_info.id).update(execute_status=2, map_grab_time=date_util.get_date_format(date_util.get_now_timestamp()))
-            except BaseException as e1:
-                print(e1)
-                models.ScanTask.objects.filter(id=task_info.id).update(execute_status=-1)
+            pool.apply_async(scan_start, (task_info,))
+            # scan_start(task_info)
         time.sleep(delay)
 
 
@@ -214,11 +247,23 @@ def exec_ztag_job(delay):
                     tag_path = taks.ztag_result_path
                     port = taks.port
                     grab_path = taks.zgrab_result_path
-                    subprocess.call('nohup cat '+grab_path+' | ztag -p' + str(port) + ' ' + ztag_command.get(port) + ' > ' + tag_path, shell=True)
+                    shell_command = 'cat '+grab_path+' | ztag -p'+str(port)+' '+ztag_command.get(port)+' > '+tag_path
+                    output = commands.getoutput(shell_command)
+                    records_handled = 0
+                    try:
+                        result = output.split("\n")
+                        if len(result) > 0:
+                            _info = result[len(result)-1]
+                            rh = json.loads(_info).get('records_handled')
+                            if rh is not None:
+                                records_handled = int(rh)
+                    except BaseException as e3:
+                        print(e3, "error ZTag info", shell_command)
                     time.sleep(0.1)
                     report_path, md5 = report_detail(_id=taks.id, zmap_path=taks.zmap_result_path, zgrab_path=taks.zgrab_result_path,
                                                      ztag_path=taks.ztag_result_path, protocol=taks.protocol, port=taks.port)
-                    models.ScanTask.objects.filter(id=taks.id).update(ztag_status=1, report_result_path=report_path, report_file_md5=md5, finish_time=date_util.get_date_format(date_util.get_now_timestamp()))
+                    models.ScanTask.objects.filter(id=taks.id).update(ztag_status=1, report_result_path=report_path, ztag_handle_count=records_handled,
+                                                                      report_file_md5=md5, finish_time=date_util.get_date_format(date_util.get_now_timestamp()))
                     os.remove(taks.zmap_result_path)
                     os.remove(taks.zgrab_result_path)
                     os.remove(taks.ztag_result_path)
@@ -230,57 +275,75 @@ def exec_ztag_job(delay):
 
 # thread.start_new_thread(exec_command_job, (2,))
 # thread.start_new_thread(exec_ztag_job, (2,))
+Timer(5, exec_command_job, (2, )).start()
+Timer(5, exec_ztag_job, (2, )).start()
 
+
+# offline_protocol = {
+#     21: 'ftp',
+#     22: 'ssh',
+#     23: 'telnet',
+#     25: 'smtp',
+#     110: 'pop3',
+#     143: 'imap',
+#     502: 'modbus',
+#     1911: 'fox',
+#     80: 'http',
+#     443: 'http',
+#     8000: 'http',
+# }
 #
-# def insert_scan(file_path, port, protocol):
-#     with(open(file_path, 'r')) as f:
-#         ips_line = set()
-#         for ip in f.readlines():
-#             ips_line.add(ip.strip())
-#             if len(ips_line) >= 20000:
-#                 ips_str = " ".join(ips_line)
-#                 _id = hash_util.get_sha1(ips_str)
-#                 zmap_result_path = '/opt/zmap/'+_id+'.csv'
-#                 zgrab_result_path = '/opt/zgrab2/'+_id+'.json'
-#                 ztag_result_path = '/opt/ztag/'+_id+'.json'
-#                 command = ['zmap', ips_str, '--bandwidth', '10M', '--probe-module=icmp_echoscan', '-p', str(port),
-#                            '--output-fields=* | ztee', zmap_result_path, '| zgrab2', protocol, '--output-file='+zgrab_result_path]
-#                 command_str = " ".join(command)
-#                 _id = hash_util.get_sha1(command_str)
-#                 print(_id)
-#                 models.ScanTask.objects.create(
-#                     id=_id, command=command_str, port=port, protocol=protocol, ip_range='散列',
-#                     ip_count=len(ips_line), ztag_result_path=ztag_result_path,
-#                     zmap_result_path=zmap_result_path, zgrab_result_path=zgrab_result_path,
-#                     priority=5, issue_time=date_util.get_date_format(date_util.get_now_timestamp())).save()
-#                 ips_line.clear()
 #
-#         if len(ips_line) > 0:
-#             ips_str = " ".join(ips_line)
-#             _id = hash_util.get_sha1(ips_str)
+# def insert_data(network_list):
+#     for net in network_list:
+#         net = net.strip()
+#         try:
+#             net4 = ipaddress.ip_network(net)
+#             ip_count = net4.num_addresses
+#         except:
+#             continue
+#         for port in offline_protocol.keys():
+#             _id = hash_util.get_sha1(net)
 #             zmap_result_path = '/opt/zmap/' + _id + '.csv'
 #             zgrab_result_path = '/opt/zgrab2/' + _id + '.json'
 #             ztag_result_path = '/opt/ztag/' + _id + '.json'
-#             command = ['zmap', ips_str, '--bandwidth', '10M', '--probe-module=icmp_echoscan', '-p', str(port),
-#                        '--output-fields=* | ztee', zmap_result_path, '| zgrab2', protocol, '--output-file='+zgrab_result_path]
+#
+#             command = ['zmap', str(net), '--probe-module=icmp_echoscan', '-p', str(port),
+#                        '--output-fields=*', '|', 'ztee', zmap_result_path,
+#                        '|', 'zgrab2', offline_protocol.get(port), '--output-file='+zgrab_result_path]
+#
 #             command_str = " ".join(command)
 #             _id = hash_util.get_sha1(command_str)
 #             print(_id)
-#             models.ScanTask.objects.create(
-#                 id=_id, command=command_str, port=port, protocol=protocol, ip_range='散列',
-#                 ip_count=len(ips_line), ztag_result_path=ztag_result_path,
-#                 zmap_result_path=zmap_result_path, zgrab_result_path=zgrab_result_path,
-#                 priority=5, issue_time=date_util.get_date_format(date_util.get_now_timestamp())).save()
+#             try:
+#                 models.ScanTask.objects.create(
+#                                 id=_id, command=command_str, port=port, protocol=offline_protocol.get(port), ip_range=net,
+#                                 ip_count=ip_count, ztag_result_path=ztag_result_path,
+#                                 zmap_result_path=zmap_result_path, zgrab_result_path=zgrab_result_path,
+#                                 priority=5, issue_time=date_util.get_date_format(date_util.get_now_timestamp())).save()
+#             except:
+#                 continue
 #
 #
-# insert_scan('/opt/scan_ips/03-08-telnet-9527.csv', 9527, 'telnet')
-# insert_scan('/opt/scan_ips/03-21-pop3s-995.csv', 995, 'pop3')
-# insert_scan('/opt/scan_ips/03-21-pop3_starttls-110.csv', 110, 'tls')
-# insert_scan('/opt/scan_ips/03-21-smtp_465.csv', 465, 'smtp')
-# insert_scan('/opt/scan_ips/03-21-smtp_starttls_25.csv', 25, 'tls')
-# insert_scan('/opt/scan_ips/03-21-smtp_starttls_587.csv', 587, 'tls')
-# insert_scan('/opt/scan_ips/03-21-telnet-23.csv', 23, 'telnet')
-# insert_scan('/opt/scan_ips/03-06-ftp-21.csv', 21, 'ftp')
-
-
+# _file = open('/home/zyc/cidr.jl', 'r')
+# net_array = []
+# net_dict = dict()
+# for line in _file.readlines():
+#     if len(line.strip()) > 0:
+#         ip_range = json.loads(line)['ip_range']
+#         info = ip_range.split('/')
+#         if net_dict.get(info[0]) is None:
+#             net_dict[info[0]] = info[1]
+#         else:
+#             if int(net_dict.get(info[0])) > int(info[1]):
+#                 net_dict[info[0]] = info[1]
+#
+#
+# for key in net_dict.keys():
+#     _str = key+'/'+net_dict.get(key)
+#     net_array.append(_str)
+#
+#
+# print(len(net_array))
+# insert_data(net_array)
 

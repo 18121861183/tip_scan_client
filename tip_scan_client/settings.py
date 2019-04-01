@@ -40,7 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'client.apps.ClientConfig',
     'rest_framework',
-    'django_apscheduler',
+    # 'django_apscheduler',
 ]
 
 MIDDLEWARE = [
@@ -87,7 +87,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'recon',
         'USER': 'root',         # 数据库用户名
-        'PASSWORD': '123456',     # 密码
+        'PASSWORD': 'tipDB@123',     # 密码
         'HOST': '127.0.0.1',    # 主机
         'PORT': '3306',
     }
