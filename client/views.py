@@ -181,7 +181,7 @@ def file_hash(file_path):
 def scan_start(task_info):
     command = task_info.command
     print("start running: ", command)
-    models.ScanTask.objects.filter(id=task_info.id).update(execute_status=1)
+
     try:
         # subprocess.call(command, shell=True)
         output = commands.getoutput(command)
@@ -214,8 +214,9 @@ def exec_command_job(delay):
     pool = multiprocessing.Pool(processes=8)
     while True:
         print("exec_command_job is running")
-        task_info = models.ScanTask.objects.filter(execute_status=0).first()
+        task_info = models.ScanTask.objects.filter(execute_status=0).filter(port=22).order_by('priority').first()
         if task_info is not None:
+            models.ScanTask.objects.filter(id=task_info.id).update(execute_status=1)
             pool.apply_async(scan_start, (task_info,))
             # scan_start(task_info)
         time.sleep(delay)
@@ -249,6 +250,7 @@ def exec_ztag_job(delay):
                     grab_path = taks.zgrab_result_path
                     shell_command = 'cat '+grab_path+' | ztag -p'+str(port)+' '+ztag_command.get(port)+' > '+tag_path
                     output = commands.getoutput(shell_command)
+                    print(output)
                     records_handled = 0
                     try:
                         result = output.split("\n")
@@ -275,59 +277,97 @@ def exec_ztag_job(delay):
 
 # thread.start_new_thread(exec_command_job, (2,))
 # thread.start_new_thread(exec_ztag_job, (2,))
-Timer(5, exec_command_job, (2, )).start()
-Timer(5, exec_ztag_job, (2, )).start()
+# Timer(5, exec_command_job, (2, )).start()
+# Timer(5, exec_ztag_job, (2, )).start()
 
 
-# offline_protocol = {
-#     21: 'ftp',
-#     22: 'ssh',
-#     23: 'telnet',
-#     25: 'smtp',
-#     110: 'pop3',
-#     143: 'imap',
-#     502: 'modbus',
-#     1911: 'fox',
-#     80: 'http',
-#     443: 'http',
-#     8000: 'http',
-# }
+offline_protocol = {
+    22: 'ssh',
+}
+
+protocols = {
+    21: 'ftp',
+    23: 'telnet',
+    25: 'smtp',
+    110: 'pop3',
+    143: 'imap',
+    502: 'modbus',
+    1911: 'fox',
+    80: 'http',
+    443: 'http',
+    8000: 'http',
+}
+
+
+def insert_data(network_list):
+    for net in network_list:
+        net = net.strip()
+        try:
+            net4 = ipaddress.ip_network(net)
+            ip_count = net4.num_addresses
+        except:
+            continue
+        for port in offline_protocol.keys():
+            _id = hash_util.get_sha1(net)
+            zmap_result_path = '/opt/zmap/' + _id + '.csv'
+            zgrab_result_path = '/opt/zgrab2/' + _id + '.json'
+            ztag_result_path = '/opt/ztag/' + _id + '.json'
+
+            command = ['zmap', str(net), '--probe-module=icmp_echoscan', '-p', str(port),
+                       '--output-fields=*', '|', 'ztee', zmap_result_path,
+                       '|', 'zgrab2', offline_protocol.get(port), '--output-file='+zgrab_result_path]
+
+            command_str = " ".join(command)
+            _id = hash_util.get_sha1(command_str)
+            print(net, _id)
+            try:
+                models.ScanTask.objects.create(
+                                id=_id, command=command_str, port=port, protocol=offline_protocol.get(port), ip_range=net,
+                                ip_count=ip_count, ztag_result_path=ztag_result_path,
+                                zmap_result_path=zmap_result_path, zgrab_result_path=zgrab_result_path,
+                                priority=1, issue_time=date_util.get_date_format(date_util.get_now_timestamp())).save()
+            except:
+                continue
+
+
+def insert_data_more(network_list):
+    for net in network_list:
+        net = net.strip()
+        try:
+            net4 = ipaddress.ip_network(net)
+            ip_count = net4.num_addresses
+        except:
+            continue
+        for port in protocols.keys():
+            _id = hash_util.get_sha1(net)
+            zmap_result_path = '/opt/zmap/' + _id + '.csv'
+            zgrab_result_path = '/opt/zgrab2/' + _id + '.json'
+            ztag_result_path = '/opt/ztag/' + _id + '.json'
+
+            command = ['zmap', str(net), '--probe-module=icmp_echoscan', '-p', str(port),
+                       '--output-fields=*', '|', 'ztee', zmap_result_path,
+                       '|', 'zgrab2', protocols.get(port), '--output-file='+zgrab_result_path]
+
+            command_str = " ".join(command)
+            _id = hash_util.get_sha1(command_str)
+            print(net, _id)
+            try:
+                models.ScanTask.objects.create(
+                                id=_id, command=command_str, port=port, protocol=protocols.get(port), ip_range=net,
+                                ip_count=ip_count, ztag_result_path=ztag_result_path,
+                                zmap_result_path=zmap_result_path, zgrab_result_path=zgrab_result_path,
+                                priority=5, issue_time=date_util.get_date_format(date_util.get_now_timestamp())).save()
+            except:
+                continue
+
+
 #
-#
-# def insert_data(network_list):
-#     for net in network_list:
-#         net = net.strip()
-#         try:
-#             net4 = ipaddress.ip_network(net)
-#             ip_count = net4.num_addresses
-#         except:
-#             continue
-#         for port in offline_protocol.keys():
-#             _id = hash_util.get_sha1(net)
-#             zmap_result_path = '/opt/zmap/' + _id + '.csv'
-#             zgrab_result_path = '/opt/zgrab2/' + _id + '.json'
-#             ztag_result_path = '/opt/ztag/' + _id + '.json'
-#
-#             command = ['zmap', str(net), '--probe-module=icmp_echoscan', '-p', str(port),
-#                        '--output-fields=*', '|', 'ztee', zmap_result_path,
-#                        '|', 'zgrab2', offline_protocol.get(port), '--output-file='+zgrab_result_path]
-#
-#             command_str = " ".join(command)
-#             _id = hash_util.get_sha1(command_str)
-#             print(_id)
-#             try:
-#                 models.ScanTask.objects.create(
-#                                 id=_id, command=command_str, port=port, protocol=offline_protocol.get(port), ip_range=net,
-#                                 ip_count=ip_count, ztag_result_path=ztag_result_path,
-#                                 zmap_result_path=zmap_result_path, zgrab_result_path=zgrab_result_path,
-#                                 priority=5, issue_time=date_util.get_date_format(date_util.get_now_timestamp())).save()
-#             except:
-#                 continue
-#
-#
-# _file = open('/home/zyc/cidr.jl', 'r')
-# net_array = []
-# net_dict = dict()
+_file = open('/home/zyc/now_range.txt', 'r')
+net_array = []
+for line in _file.readlines():
+    if len(line.strip()) > 0:
+        net_array.append(line.strip())
+
 # for line in _file.readlines():
 #     if len(line.strip()) > 0:
 #         ip_range = json.loads(line)['ip_range']
@@ -345,5 +385,7 @@ Timer(5, exec_ztag_job, (2, )).start()
 #
 #
 # print(len(net_array))
-# insert_data(net_array)
+insert_data(net_array)
+
+insert_data_more(net_array)
 
