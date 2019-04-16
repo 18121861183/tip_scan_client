@@ -1,3 +1,5 @@
+urllib3
+requests
 apscheduler
 Django
 rsa
@@ -5,3 +7,4 @@ djangorestframework
 MySQL-python
 django_apscheduler
 ipaddress
+psutil
